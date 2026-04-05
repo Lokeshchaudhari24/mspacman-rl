@@ -1,0 +1,21 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+
+# VS Code settings
+.vscode/
+
+# Results (models are large, don't push to GitHub)
+results/models/*.pth
+
+# OS files
+.DS_Store
+Thumbs.db
