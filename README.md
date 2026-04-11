@@ -4,6 +4,7 @@ A Deep Q-Network (DQN) agent trained to play Ms. Pac-Man using PyTorch and Gymna
 
 ## Project Structure
 
+```
 mspacman-rl/
 ├── src/
 │   ├── agent.py        # DDQN agent, replay buffer, neural network
@@ -15,6 +16,7 @@ mspacman-rl/
 │   └── plots/          # Training curves and comparison plots
 ├── requirements.txt
 └── README.md
+```
 
 ## Setup
 
