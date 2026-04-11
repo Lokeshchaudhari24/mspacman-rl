@@ -1,77 +1,47 @@
-# Ms. Pac-Man Reinforcement Learning Agent 🎮
+# Ms. Pac-Man Reinforcement Learning
 
-A Deep Reinforcement Learning agent that learns to play Ms. Pac-Man
-using Double DQN (DDQN) with reward shaping.
+A Deep Q-Network (DQN) agent trained to play Ms. Pac-Man using PyTorch and Gymnasium.
 
 ## Project Structure
-mspacman-rl/
+
+Ms.PacMan/
 ├── src/
-│   ├── agent.py       # DQN network, replay buffer, DDQN agent
-│   ├── train.py       # Training loop with reward shaping
-│   ├── evaluate.py    # Watch the trained agent play
-│   └── compare.py     # Plot experiment comparison
+│   ├── agent.py        # DDQN agent, replay buffer, neural network
+│   ├── train.py        # Training loop with reward shaping
+│   ├── evaluate.py     # Visual demo of trained agent
+│   └── compare.py      # Comparison plot of experiments
 ├── results/
-│   ├── models/        # Saved model weights (.pth)
-│   └── plots/         # Training curves + comparison chart
+│   ├── models/         # Saved model checkpoints
+│   └── plots/          # Training curves and comparison plots
 ├── requirements.txt
 └── README.md
 
 ## Setup
-```bash
-# Clone the repo
-git clone https://github.com/Lokeshchaudhari24/mspacman-rl.git
-cd mspacman-rl
 
-# Create virtual environment
 python -m venv venv
-venv\Scripts\activate      # Windows
-source venv/bin/activate   # Mac/Linux
-
-# Install dependencies
+venv\Scripts\activate
 pip install -r requirements.txt
+autorom --accept-license
 
-# Download Atari ROMs
-python -c "from AutoROM import AutoROM; AutoROM(accept_license=True, source_file=None, install_dir=None, quiet=False)"
-```
+## Train
 
-## Training
-```bash
-cd src
+Baseline:
+python src/train.py --episodes 300 --no-shaping --name exp1_baseline
 
-# Experiment 1 — Baseline DDQN
-python train.py --episodes 300 --no-shaping --name exp1_baseline
+With reward shaping:
+python src/train.py --episodes 300 --life-penalty -500 --name exp4_both
 
-# Experiment 2 — DDQN with life penalty
-python train.py --episodes 300 --life-penalty -500 --name exp4_both
-```
+## Evaluate
 
-## Watch the Agent Play
-```bash
-cd src
-python evaluate.py --model ../results/models/exp4_both_best.pth --episodes 3
-```
-
-## Compare Experiments
-```bash
-cd src
-python compare.py
-```
+python src/evaluate.py --model results/models/exp4_both_best.pth --episodes 3
 
 ## Results
+- Baseline DDQN avg score: ~800-1500
+- Improved agent avg score: ~2000-3000
 
-| Experiment | Description | Avg Score |
-|---|---|---|
-| Baseline DDQN | No reward shaping | ~800 |
-| DDQN + Life Penalty | Penalizes ghost deaths | ~1500 |
-
-## Key Concepts
-
-- **DDQN** — Double DQN reduces overestimation of Q-values
-- **Replay Buffer** — Agent learns from past experiences
-- **Reward Shaping** — Extra signals to teach better behavior
-- **Frame Stacking** — Agent sees 4 frames at once to understand motion
-
-## References
-
-- [DeepMind DQN Paper](https://www.nature.com/articles/nature14236)
-- [Gymnasium Atari](https://gymnasium.farama.org/environments/atari/)
+## Tech Stack
+- Python 3.11
+- PyTorch
+- Gymnasium (Atari)
+- NumPy
+- Matplotlib

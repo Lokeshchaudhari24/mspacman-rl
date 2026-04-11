@@ -2,61 +2,36 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-# ── Experiment definitions ───────────────────────────────────
-EXPERIMENTS = [
-    {
-        'name':  'exp1_baseline',
-        'label': 'Baseline DDQN',
-        'color': '#378ADD'
-    },
-    {
-        'name':  'exp4_both',
-        'label': 'DDQN + Life Penalty',
-        'color': '#E24B4A'
-    },
-]
+def smooth(scores, window=10):
+    return np.convolve(scores, np.ones(window)/window, mode='valid')
 
-# ── Smooth rewards ───────────────────────────────────────────
-def smooth(rewards, window=20):
-    """Rolling average to make the chart easier to read"""
-    smoothed = []
-    for i in range(len(rewards)):
-        start = max(0, i - window)
-        smoothed.append(np.mean(rewards[start:i+1]))
-    return smoothed
-
-# ── Plot ─────────────────────────────────────────────────────
 def compare():
+    experiments = {
+        "Baseline DDQN":     "../results/exp1_baseline_scores.npy",
+        "Life Penalty":      "../results/exp4_both_scores.npy",
+        "Stuck Fix":         "../results/exp6_final_scores.npy",
+    }
+
     plt.figure(figsize=(12, 6))
 
-    for exp in EXPERIMENTS:
-        path = f'../results/plots/{exp["name"]}_rewards.npy'
+    for label, path in experiments.items():
+        if os.path.exists(path):
+            scores = np.load(path)
+            plt.plot(smooth(scores), label=label, linewidth=2)
+        else:
+            print(f"Skipping {label} — file not found: {path}")
 
-        if not os.path.exists(path):
-            print(f'Warning: {path} not found — skipping {exp["label"]}')
-            continue
-
-        rewards  = np.load(path)
-        smoothed = smooth(rewards)
-
-        # Raw rewards (faint)
-        plt.plot(rewards,  alpha=0.15, color=exp['color'])
-
-        # Smoothed rewards (bold)
-        plt.plot(smoothed, alpha=0.9,  color=exp['color'],
-                 linewidth=2.5, label=exp['label'])
-
-    plt.xlabel('Episode',  fontsize=12)
-    plt.ylabel('Score',    fontsize=12)
-    plt.title('Ms. Pac-Man — DDQN Experiment Comparison', fontsize=14)
-    plt.legend(fontsize=11)
-    plt.grid(alpha=0.2)
+    plt.title("Experiment Comparison — Ms. Pac-Man RL", fontsize=14)
+    plt.xlabel("Episode")
+    plt.ylabel("Score (smoothed over 10 episodes)")
+    plt.legend()
+    plt.grid(alpha=0.3)
     plt.tight_layout()
 
-    out = '../results/plots/comparison.png'
-    plt.savefig(out, dpi=150)
+    os.makedirs("../results/plots", exist_ok=True)
+    plt.savefig("../results/plots/comparison.png", dpi=150)
     plt.close()
-    print(f'Comparison plot saved to {out}')
+    print("Comparison plot saved to results/plots/comparison.png")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     compare()

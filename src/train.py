@@ -3,157 +3,119 @@ import ale_py
 gym.register_envs(ale_py)
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 import argparse
 import os
-from collections import deque
+import matplotlib.pyplot as plt
 from agent import DDQNAgent
 
-# ── Argument Parser ──────────────────────────────────────────
-parser = argparse.ArgumentParser()
-parser.add_argument('--episodes',     type=int,   default=300)
-parser.add_argument('--name',         type=str,   default='experiment')
-parser.add_argument('--no-shaping',   action='store_true')
-parser.add_argument('--life-penalty', type=float, default=0.0)
-args = parser.parse_args()
+def preprocess(obs):
+    if isinstance(obs, tuple):
+        obs = obs[0]
+    obs = np.array(obs, dtype=np.float32)
+    if len(obs.shape) == 3:
+        obs = np.mean(obs, axis=2)
+    obs = obs[::2, ::2]
+    obs = obs / 255.0
+    return np.expand_dims(obs, axis=0)
 
-# ── Paths ────────────────────────────────────────────────────
-os.makedirs('../results/models', exist_ok=True)
-os.makedirs('../results/plots',  exist_ok=True)
-
-# ── Reward Shaping ───────────────────────────────────────────
-def shape_reward(reward, info, prev_info, done, args):
-    """
-    Make the reward signal smarter.
-    The default reward is just points scored.
-    We add extra signals to teach the agent better behavior.
-    """
+def shape_reward(reward, info, prev_info, life_penalty,
+                 prev_obs, curr_obs, stuck_counter):
     shaped = reward
 
-    if not args.no_shaping:
-        # Penalize losing a life — teaches ghost avoidance
-        if args.life_penalty != 0.0:
-            prev_lives = prev_info.get('lives', 3)
-            curr_lives = info.get('lives', 3)
-            if curr_lives < prev_lives:
-                shaped += args.life_penalty
+    # Punish dying
+    if life_penalty != 0:
+        prev_lives = prev_info.get('lives', 3) if prev_info else 3
+        curr_lives = info.get('lives', 3)
+        if curr_lives < prev_lives:
+            shaped += life_penalty
+
+    # Detect stuck by comparing frames
+    if prev_obs is not None:
+        diff = np.mean(np.abs(curr_obs - prev_obs))
+        if diff < 0.001:  # frames almost identical = stuck
+            stuck_counter[0] += 1
+            if stuck_counter[0] > 10:  # stuck for 10+ frames
+                shaped -= 10           # punish hard
+        else:
+            stuck_counter[0] = 0       # reset if moving
 
     return shaped
 
-# ── Frame Preprocessing ──────────────────────────────────────
-def preprocess(obs, frame_stack):
-    """Convert game screen to grayscale and stack frames"""
-    if obs.ndim == 3:
-        # Convert RGB to grayscale
-        gray = np.mean(obs, axis=2).astype(np.uint8)
-        gray = gray[::2, ::2]   # downsample to 105x80
-        frame_stack.append(gray)
-    return np.array(frame_stack)
-
-# ── Main Training Loop ───────────────────────────────────────
-def train():
-    # Create the Ms. Pac-Man environment
-    env = gym.make('ALE/MsPacman-v5', render_mode=None)
+def train(episodes, no_shaping, life_penalty, name):
+    env = gym.make("ALE/MsPacman-v5")
+    obs, _ = env.reset()
+    obs = preprocess(obs)
+    input_shape = obs.shape
     n_actions = env.action_space.n
-    print(f"Actions available: {n_actions}")
-
-    # Frame stack — agent sees 4 frames at once (like motion blur)
-    frame_stack = deque(maxlen=4)
-    input_shape = (4, 105, 80)
 
     agent = DDQNAgent(input_shape, n_actions)
 
-    # Tracking
-    all_rewards   = []
-    avg_rewards   = []
-    best_avg      = -float('inf')
-    recent        = deque(maxlen=20)
+    os.makedirs("../results/models", exist_ok=True)
+    os.makedirs("../results/plots", exist_ok=True)
 
-    print(f"\nStarting training: {args.name}")
-    print(f"Episodes: {args.episodes}")
-    print(f"Reward shaping: {'OFF' if args.no_shaping else 'ON'}")
-    print(f"Life penalty: {args.life_penalty}")
-    print("-" * 50)
+    scores = []
+    best_score = -np.inf
 
-    for episode in range(1, args.episodes + 1):
-        obs, info = env.reset()
-        prev_info = info.copy()
-
-        # Initialize frame stack with first frame
-        gray = np.mean(obs, axis=2).astype(np.uint8)[::2, ::2]
-        for _ in range(4):
-            frame_stack.append(gray)
-
-        state       = np.array(frame_stack)
+    for ep in range(1, episodes + 1):
+        obs, _ = env.reset()
+        obs = preprocess(obs)
         total_reward = 0
-        total_loss   = 0
-        steps        = 0
+        prev_info = None
+        prev_obs = None
+        stuck_counter = [0]
+        done = False
 
-        while True:
-            action          = agent.select_action(state)
-            obs, reward, terminated, truncated, info = env.step(action)
-            done            = terminated or truncated
+        while not done:
+            action = agent.select_action(obs)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            next_obs = preprocess(next_obs)
 
-            # Shape the reward
-            shaped_reward   = shape_reward(reward, info, prev_info, done, args)
+            if not no_shaping:
+                reward = shape_reward(reward, info, prev_info,
+                                      life_penalty, prev_obs,
+                                      next_obs, stuck_counter)
 
-            # Preprocess next frame
-            next_state      = preprocess(obs, frame_stack)
+            agent.memory.push(obs, action, reward, next_obs, done)
+            agent.train()
 
-            # Store in memory
-            agent.memory.push(state, action, shaped_reward, next_state, done)
+            prev_obs = obs
+            obs = next_obs
+            prev_info = info
+            total_reward += reward
 
-            # Learn
-            loss            = agent.learn()
-            total_loss     += loss
-            total_reward   += reward   # track real reward (not shaped)
-            prev_info       = info.copy()
-            state           = next_state
-            steps          += 1
+        scores.append(total_reward)
 
-            if done:
-                break
+        if total_reward > best_score:
+            best_score = total_reward
+            torch.save(agent.policy_net.state_dict(),
+                       f"../results/models/{name}_best.pth")
 
-        # Tracking
-        all_rewards.append(total_reward)
-        recent.append(total_reward)
-        avg = np.mean(recent)
-        avg_rewards.append(avg)
+        if ep % 10 == 0:
+            avg = np.mean(scores[-10:])
+            print(f"Episode {ep}/{episodes} | Avg Score: {avg:.1f} | "
+                  f"Epsilon: {agent.epsilon:.3f} | Best: {best_score:.1f}")
 
-        # Save best model
-        if avg > best_avg:
-            best_avg = avg
-            agent.save(f'../results/models/{args.name}_best.pth')
+    np.save(f"../results/{name}_scores.npy", np.array(scores))
 
-        # Print progress every 10 episodes
-        if episode % 10 == 0:
-            print(f"Episode {episode:4d} | "
-                  f"Reward: {total_reward:7.1f} | "
-                  f"Avg(20): {avg:7.1f} | "
-                  f"Epsilon: {agent.epsilon:.3f} | "
-                  f"Steps: {steps}")
-
-    # Save final model
-    agent.save(f'../results/models/{args.name}_final.pth')
-
-    # Save training curve plot
-    plt.figure(figsize=(12, 5))
-    plt.plot(all_rewards, alpha=0.4, label='Episode reward')
-    plt.plot(avg_rewards, linewidth=2, label='Avg reward (20 ep)')
-    plt.xlabel('Episode')
-    plt.ylabel('Score')
-    plt.title(f'Training curve — {args.name}')
+    plt.figure(figsize=(10, 5))
+    plt.plot(scores, alpha=0.4, label='Score')
+    plt.plot(np.convolve(scores, np.ones(10)/10, mode='valid'), label='Avg (10 ep)')
+    plt.title(f"Training Curve — {name}")
+    plt.xlabel("Episode")
+    plt.ylabel("Score")
     plt.legend()
-    plt.tight_layout()
-    plt.savefig(f'../results/plots/{args.name}_curve.png', dpi=150)
+    plt.savefig(f"../results/plots/{name}_curve.png")
     plt.close()
-    print(f"\nPlot saved to results/plots/{args.name}_curve.png")
-
-    # Save raw rewards
-    np.save(f'../results/plots/{args.name}_rewards.npy', np.array(all_rewards))
-
+    print(f"Done! Results saved for {name}")
     env.close()
-    print("Training complete!")
 
-if __name__ == '__main__':
-    train()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--episodes",     type=int,   default=300)
+    parser.add_argument("--no-shaping",   action="store_true")
+    parser.add_argument("--life-penalty", type=float, default=-500)
+    parser.add_argument("--name",         type=str,   default="experiment")
+    args = parser.parse_args()
+
+    train(args.episodes, args.no_shaping, args.life_penalty, args.name)
